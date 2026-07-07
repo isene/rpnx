@@ -36,6 +36,32 @@ const C_BOX: u8 = 240; // stack box border
 const C_GRP: u8 = 109; // legend group label
 const C_PROG: u8 = 176; // program label row (magenta, the "magnetic card")
 
+/// Group the integer part of an in-progress entry string with a thousands
+/// separator (`thou`), leaving the fraction (after `dec`) and any exponent
+/// (`e`/`E`) untouched. Sign preserved. Non-numeric buffers pass through.
+fn group_entry(disp: &str, dec: char, thou: char) -> String {
+    let (sign, rest) = match disp.strip_prefix('-') {
+        Some(r) => ("-", r),
+        None => ("", disp),
+    };
+    let int_end = rest
+        .find(|c: char| c == dec || c == 'e' || c == 'E')
+        .unwrap_or(rest.len());
+    let int_part = &rest[..int_end];
+    if int_part.len() < 4 || !int_part.chars().all(|c| c.is_ascii_digit()) {
+        return disp.to_string();
+    }
+    let n = int_part.len();
+    let mut grouped = String::with_capacity(n + n / 3);
+    for (i, ch) in int_part.chars().enumerate() {
+        if i > 0 && (n - i) % 3 == 0 {
+            grouped.push(thou);
+        }
+        grouped.push(ch);
+    }
+    format!("{}{}{}", sign, grouped, &rest[int_end..])
+}
+
 /// The program's global (alpha) labels — `lbl "NAME"` — in file order, with
 /// their line index. These become the top shift row (F1..F10), HP-67 style.
 fn global_labels(prog: &Program) -> Vec<(String, usize)> {
@@ -398,8 +424,20 @@ impl App {
 
     fn render_main(&mut self) {
         let d = display(self.state.clone());
+        // While entering, group the thousands live (space for comma-decimal,
+        // comma for dot-decimal) so a long number is readable as it's typed.
+        let x_str = {
+            let sep_on = *self.state.flags.get("29").unwrap_or(&true);
+            if d.entering && sep_on {
+                let comma = !*self.state.flags.get("28").unwrap_or(&false);
+                let (dec, thou) = if comma { (',', ' ') } else { ('.', ',') };
+                group_entry(&d.x, dec, thou)
+            } else {
+                d.x.clone()
+            }
+        };
         // Right-align the register values in a shared field.
-        let vals = [&d.last_x, &d.t, &d.z, &d.y, &d.x];
+        let vals = [&d.last_x, &d.t, &d.z, &d.y, &x_str];
         let field = vals
             .iter()
             .map(|v| crust::display_width(v))
@@ -430,7 +468,7 @@ impl App {
             ("T", &d.t, false),
             ("Z", &d.z, false),
             ("Y", &d.y, false),
-            ("X", &d.x, true),
+            ("X", &x_str, true),
         ] {
             let pad = field.saturating_sub(crust::display_width(val));
             let lab = if is_x {
@@ -828,5 +866,21 @@ fn main() {
         if let Some(path) = &emit_file {
             let _ = std::fs::write(path, x);
         }
+    }
+}
+
+#[cfg(test)]
+mod grouping_tests {
+    use super::group_entry;
+    #[test]
+    fn cases() {
+        assert_eq!(group_entry("1234567", ',', ' '), "1 234 567");
+        assert_eq!(group_entry("1234567", '.', ','), "1,234,567");
+        assert_eq!(group_entry("1234,56", ',', ' '), "1 234,56");
+        assert_eq!(group_entry("-1234", ',', ' '), "-1 234");
+        assert_eq!(group_entry("123", ',', ' '), "123");
+        assert_eq!(group_entry("12e3", ',', ' '), "12e3");
+        assert_eq!(group_entry("12345e3", '.', ','), "12,345e3");
+        assert_eq!(group_entry("1234.", '.', ','), "1,234.");
     }
 }
