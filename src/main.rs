@@ -178,14 +178,16 @@ impl App {
         self.prog_name = name.to_string();
         self.program = Some(prog);
         self.resume = None;
-        self.msg = if labs == 0 {
-            format!("loaded {} ({} lines) \u{2014} no global labels", name, lines)
+        if labs > 0 {
+            // Show the labels immediately: switch to the program shift row.
+            self.page = self.prog_page();
+            self.msg = format!(
+                "loaded {} ({} lines) \u{2014} F1..F{} run its labels \u{00b7} TAB cycles pages",
+                name, lines, labs.min(10)
+            );
         } else {
-            format!(
-                "loaded {} ({} lines, {} labels) \u{2014} F1..F{} run them",
-                name, lines, labs, labs.min(10)
-            )
-        };
+            self.msg = format!("loaded {} ({} lines) \u{2014} no global labels", name, lines);
+        }
     }
 
     /// Read a `.xrpn` file from disk (with ~ expansion) and load it.
@@ -259,9 +261,10 @@ impl App {
         }
     }
 
-    /// The command bound to `key` on the active shift page, if any.
+    /// The command bound to `key` on the active f/g/h shift page, if any. The
+    /// program page has no letter overrides (its labels run on F1..F10).
     fn page_cmd(&self, key: &str) -> Option<&'static str> {
-        if self.page == 0 {
+        if self.page == 0 || self.page > SHIFT_PAGES.len() {
             return None;
         }
         SHIFT_PAGES[self.page - 1]
@@ -269,6 +272,19 @@ impl App {
             .iter()
             .find(|(k, _, _)| *k == key)
             .map(|(_, _, c)| *c)
+    }
+
+    /// Page index of the program page (only reachable when a program is loaded).
+    fn prog_page(&self) -> usize {
+        SHIFT_PAGES.len() + 1
+    }
+    /// Is the program's label row the active shift page?
+    fn is_prog_page(&self) -> bool {
+        self.program.is_some() && self.page == self.prog_page()
+    }
+    /// Number of cyclable pages: base + f/g/h + program (only if one is loaded).
+    fn page_count(&self) -> usize {
+        1 + SHIFT_PAGES.len() + if self.program.is_some() { 1 } else { 0 }
     }
 
     /// Snapshot state before a mutating action so `u` can undo it.
@@ -299,7 +315,10 @@ impl App {
         let d = display(self.state.clone());
         let base = format!(" RPNx    {}", d.mode);
         // Active shift-page tag, in the page colour.
-        let (tag_plain, tag_styled) = if self.page != 0 {
+        let (tag_plain, tag_styled) = if self.is_prog_page() {
+            let t = format!("  PROG {}", self.prog_name);
+            (t.clone(), style::bold(&style::fg(&t, C_PROG)))
+        } else if self.page != 0 {
             let p = &SHIFT_PAGES[self.page - 1];
             let t = format!("  SH {}", p.tag);
             (t.clone(), style::bold(&style::fg(&t, p.color)))
@@ -336,29 +355,6 @@ impl App {
         let inner_w = field + 3; // label + 2 spaces + value field
         let bar = style::fg("\u{2502}", C_BOX);
         let mut f = String::new();
-        // Loaded program's global labels as a top row — HP-67 "magnetic card".
-        if self.program.is_some() && !self.labels.is_empty() {
-            let cells: String = self
-                .labels
-                .iter()
-                .take(10)
-                .enumerate()
-                .map(|(i, (name, _))| {
-                    format!(
-                        "{} {}",
-                        style::fg(&format!("F{}", i + 1), C_PROG),
-                        style::bold(&style::fg(name, C_PROG))
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("   ");
-            f.push_str(&format!(
-                "  {} {}   {}\n\n",
-                style::bold(&style::fg("PROG", C_PROG)),
-                style::fg(&self.prog_name, C_DESC),
-                cells
-            ));
-        }
         // Boxed stack — a little calculator "card".
         f.push_str(&format!(
             "{}{}\n",
@@ -441,8 +437,22 @@ impl App {
         };
         let mut out = String::new();
         // Active shift page (coloured) shown on top, so its extra functions are
-        // obvious; the base legend below still lists everything as usual.
-        if self.page != 0 {
+        // obvious; the base legend below still lists everything as usual. The
+        // program page shows its global labels on F1..F10 (HP-67 top row).
+        if self.is_prog_page() {
+            let row: String = self
+                .labels
+                .iter()
+                .take(10)
+                .enumerate()
+                .map(|(i, (name, _))| cellc(C_PROG, &format!("F{}", i + 1), name))
+                .collect();
+            out.push_str(&format!(
+                "  {}   {}\n\n",
+                style::bold(&style::fg(&format!("{:>5}", "prog"), C_PROG)),
+                row
+            ));
+        } else if self.page != 0 {
             let p = &SHIFT_PAGES[self.page - 1];
             let row: String = p.keys.iter().map(|(k, l, _)| cellc(p.color, k, l)).collect();
             out.push_str(&format!(
@@ -562,7 +572,7 @@ impl App {
             }
             match key.as_str() {
                 // ----- shift / quit
-                "TAB" => self.page = (self.page + 1) % (SHIFT_PAGES.len() + 1),
+                "TAB" => self.page = (self.page + 1) % self.page_count(),
                 "Q" => return Some(display(self.state.clone()).x),
                 "ESC" => {
                     if self.page != 0 {
