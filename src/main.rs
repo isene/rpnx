@@ -29,6 +29,8 @@ const C_XVAL: u8 = 255; // X register value (bright)
 const C_MODE: u8 = 108; // mode line (muted green)
 const C_MSG: u8 = 214; // transient message
 const C_BAR_BG: u8 = 236; // title / foot background
+const C_BOX: u8 = 240; // stack box border
+const C_GRP: u8 = 109; // legend group label
 
 fn state_path() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/rpnx/state")
@@ -130,9 +132,23 @@ impl App {
             .map(|v| crust::display_width(v))
             .max()
             .unwrap_or(0)
-            .max(10);
-        let indent = "     ";
+            .max(12);
+        let indent = "    ";
+        let inner_w = field + 3; // label + 2 spaces + value field
+        let bar = style::fg("\u{2502}", C_BOX);
         let mut f = String::new();
+        // Boxed stack — a little calculator "card".
+        f.push_str(&format!(
+            "{}{}\n",
+            indent,
+            style::fg(
+                &format!(
+                    "\u{256d}\u{2500} Stack {}\u{256e}",
+                    "\u{2500}".repeat(inner_w.saturating_sub(6))
+                ),
+                C_BOX
+            )
+        ));
         for (label, val, is_x) in [
             ("L", &d.last_x, false),
             ("T", &d.t, false),
@@ -141,7 +157,6 @@ impl App {
             ("X", &d.x, true),
         ] {
             let pad = field.saturating_sub(crust::display_width(val));
-            let val_col = if is_x { C_XVAL } else { C_VAL };
             let lab = if is_x {
                 style::bold(&style::fg(label, C_TITLE))
             } else {
@@ -149,18 +164,26 @@ impl App {
             };
             let value = format!("{}{}", " ".repeat(pad), val);
             let value = if is_x {
-                style::bold(&style::fg(&value, val_col))
+                style::bold(&style::fg(&value, C_XVAL))
             } else {
-                style::fg(&value, val_col)
+                style::fg(&value, C_VAL)
             };
-            f.push_str(&format!("{}{}  {}\n", indent, lab, value));
+            f.push_str(&format!("{}{} {}  {} {}\n", indent, bar, lab, value, bar));
         }
+        f.push_str(&format!(
+            "{}{}\n",
+            indent,
+            style::fg(
+                &format!("\u{2570}{}\u{256f}", "\u{2500}".repeat(inner_w + 2)),
+                C_BOX
+            )
+        ));
         // Alpha register, only when it holds something.
         if !d.alpha.is_empty() {
             f.push_str(&format!(
-                "{}{}  {}\n",
+                "{}  {} {}\n",
                 indent,
-                style::fg("A", C_LABEL),
+                style::fg("\u{03b1}", C_LABEL),
                 style::fg(&d.alpha, C_MODE)
             ));
         }
@@ -171,62 +194,109 @@ impl App {
         self.main.full_refresh();
     }
 
-    /// The function-key legend: trigger key in orange, description dim.
+    /// The function legend: trigger key in orange, description dim, grouped
+    /// by category. Everything not on a direct key is reachable via the `:`
+    /// command palette (listed at the bottom), so all XRPN functions show here.
     fn legend(&self) -> String {
         let o = |k: &str| style::fg(k, C_KEY);
-        let d = |t: &str| style::fg(t, C_DESC);
-        let cell = |k: &str, t: &str| format!("{} {}", o(k), d(t));
-        let rows = [
+        let dm = |t: &str| style::fg(t, C_DESC);
+        let cell = |k: &str, t: &str| {
+            if t.is_empty() {
+                o(k)
+            } else {
+                format!("{} {}", o(k), dm(t))
+            }
+        };
+        let grp = |label: &str, cells: Vec<String>| {
+            format!(
+                "  {}   {}\n",
+                style::fg(&format!("{:>5}", label), C_GRP),
+                cells.join("   ")
+            )
+        };
+        let mut out = String::new();
+        out.push_str(&grp(
+            "entry",
             vec![
-                cell("\u{2191}\u{2193}", "roll"),
+                cell("0-9", ""),
+                cell(".", ""),
+                cell("e", "eex"),
+                cell("h", "\u{00b1}"),
+                cell("\u{21b5}", "push"),
+                cell("\u{232b}", "back"),
+            ],
+        ));
+        out.push_str(&grp(
+            "stack",
+            vec![
                 cell("\u{2190}", "x\u{21c4}y"),
+                cell("\u{2191}\u{2193}", "roll"),
+                cell("l", "LASTx"),
+                cell("c", "CLx"),
+                cell("C", "CLstk"),
+            ],
+        ));
+        out.push_str(&grp(
+            "arith",
+            vec![
                 cell("+ \u{2212} \u{00d7} \u{00f7}", ""),
                 cell("\\", "mod"),
                 cell("%", "pct"),
-                cell("h", "\u{00b1}"),
-                cell("p", "\u{03c0}"),
-                cell("e", "eex"),
             ],
+        ));
+        out.push_str(&grp(
+            "power",
             vec![
-                cell("^", "y\u{02e3}"),
-                cell("x", "1/x"),
                 cell("q", "\u{221a}"),
-                cell("n", "ln"),
-                cell("g", "log"),
-                cell("l", "LASTx"),
+                cell("x", "1/x"),
+                cell("^", "y\u{02e3}"),
+                cell("p", "\u{03c0}"),
+                cell("|", "|x|"),
             ],
+        ));
+        out.push_str(&grp(
+            "trig",
             vec![
                 cell("i", "sin"),
                 cell("o", "cos"),
                 cell("a", "tan"),
+                cell("Ctrl+", "arc"),
                 cell("r", "rad"),
                 cell("d", "deg"),
-                cell("c", "CLx"),
-                cell("C", "CLstk"),
             ],
+        ));
+        out.push_str(&grp("log", vec![cell("n", "ln"), cell("g", "log")]));
+        out.push_str(&grp(
+            "mode",
             vec![
-                cell("S", "sto"),
-                cell("R", "rcl"),
                 cell("f", "fix"),
                 cell("s", "sci"),
-                cell("u", "undo"),
                 cell("'", "fmt"),
+                cell("u", "undo"),
                 cell("!", "fact"),
             ],
-        ];
-        let mut out = String::new();
-        for r in rows {
-            out.push_str("   ");
-            out.push_str(&r.join("   "));
-            out.push('\n');
-        }
+        ));
+        out.push_str(&grp("reg", vec![cell("S", "sto"), cell("R", "rcl")]));
+        out.push('\n');
+        // The rest of the phone's shift-page functions, reached by typing the
+        // command name after `:`.
+        out.push_str(&format!(
+            "  {}   {}\n",
+            style::fg(&format!("{:>5}", ":"), C_KEY),
+            dm("type any command \u{2014} sqr cube e\u{02e3} 10\u{02e3} \u{02e3}\u{221a}y  asin acos atan  \u{03a3}+ \u{03a3}\u{2212} mean sdev CL\u{03a3}")
+        ));
+        out.push_str(&format!(
+            "  {}   {}\n",
+            " ".repeat(5),
+            dm("abs int frc rnd drop \u{0394}%   eng grad   hms hr \u{2192}P \u{2192}R")
+        ));
         out
     }
 
     fn render_foot(&mut self) {
         if self.msg.is_empty() {
             self.foot.say(&style::fg(
-                " Enter a number, ENTER to push. Ops act on Y and X. \u{00b7} 'u' undo \u{00b7} 'Q' quit",
+                " number then ENTER to push \u{00b7} ops act on Y and X \u{00b7} ':' any command \u{00b7} 'u' undo \u{00b7} 'Q' quit",
                 C_DESC,
             ));
         } else {
@@ -308,6 +378,15 @@ impl App {
                 "r" => self.run_cmd("rad"),
                 "d" => self.run_cmd("deg"),
                 "!" | "C-F" => self.run_cmd("fact"),
+                "|" => self.run_cmd("abs"),
+                // ----- command palette: any XRPN function by name (sqr, cube,
+                // exp, tenx, root, asin.., splus, mean, sdev, hms, r_p, eng, ...)
+                ":" => {
+                    let cmd = self.ask("cmd: ");
+                    if !cmd.is_empty() {
+                        self.run_cmd(&cmd);
+                    }
+                }
                 // ----- clear stack
                 // (Ctrl+C is quit-cancel above; use C-x style clear via 'C')
                 "C" => self.run_cmd("clst"),
@@ -368,7 +447,8 @@ fn main() {
         println!("  Digits, '.', 'e' (eex), 'h' (\u{00b1}), ENTER to push.");
         println!("  + - * /  \\ (mod)  % (pct)   <  x\u{21c4}y   \u{2191}\u{2193} roll   l LASTx");
         println!("  q \u{221a}  x 1/x  ^ y\u{02e3}   n ln  g log   p \u{03c0}   i/o/a sin/cos/tan (Ctrl = arc)");
-        println!("  r rad  d deg   f fix  s sci   S sto  R rcl   ' number-format   ! fact");
+        println!("  r rad  d deg   f fix  s sci   S sto  R rcl   ' number-format   ! fact   | abs");
+        println!("  : type any XRPN command (sqr cube exp tenx root  \u{03a3}+ mean sdev  hms \u{2192}P eng grad \u{2026})");
         println!("  u undo   c CLx   C CLstk   H help   Q quit");
         println!();
         println!("  --emit-x   print the X register to stdout on quit (for scribe paste-back)");
