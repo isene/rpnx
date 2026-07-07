@@ -12,7 +12,7 @@
 // Design goals (Fe2O3): cold when idle (blocking key read, no timers), fast
 // startup, one engine step per keystroke. State persists to ~/.config/rpnx/state.
 
-use crust::{Crust, Input, Pane, style};
+use crust::{Crust, Input, Pane, Popup, style};
 use rpnx_core::{
     display, execute, key_backspace, key_chs, key_digit, key_dot, key_eex, key_enter, new_state,
     parse_program, parse_state, run_program, serialize_state, CalcState, Program, RunStatus,
@@ -249,12 +249,16 @@ impl App {
         }
     }
 
-    /// F-key pressed: run the corresponding global label (1-based).
+    /// F-key pressed: run the corresponding global label (1-based). Sets HP
+    /// flag 22 (numeric-entry flag) so a program can tell "store" (a number was
+    /// just keyed) from "solve" (bare key press) — the HP-67/41 solver idiom.
     fn run_label(&mut self, fkey: usize) {
         if self.program.is_none() {
             self.msg = "no program \u{2014} press L to load one".into();
             return;
         }
+        let keyed = !self.state.entering.is_empty();
+        self.state.flags.insert("22".to_string(), keyed);
         match self.labels.get(fkey.wrapping_sub(1)).cloned() {
             Some((name, line)) => self.run_from(&name, line as u32, vec![]),
             None => self.msg = format!("F{}: no label there", fkey),
@@ -303,6 +307,60 @@ impl App {
         self.msg = r.error.unwrap_or_default();
     }
 
+    /// `?` / `H` — scrollable help popup.
+    fn show_help(&mut self) {
+        let a = |s: &str| style::fg(s, C_KEY); // accent key colour
+        let h = format!(
+            "\
+{title}
+
+ {se}
+   \u{2190} x\u{21c4}y    \u{2191}\u{2193} roll    l LASTx    c CLx    C CLstk
+ {en}
+   0-9  .  e eex   h \u{00b1}   ENTER push   \u{232b} back
+ {ar}
+   + \u{2212} \u{00d7} \u{00f7}    \\ mod    % pct
+ {ma}
+   q \u{221a}   x 1/x   ^ y\u{02e3}   p \u{03c0}   | |x|   ! fact
+ {tr}
+   i sin   o cos   a tan    I/O/A arc    r rad   d deg
+ {lo}   n ln   g log        {mo}   f fix  s sci  ' fmt  u undo
+ {re}   S sto   R rcl
+
+ {sh}   TAB cycles coloured pages, ESC returns to base:
+   f  gold   x\u{00b2} x\u{00b3} e\u{02e3} 10\u{02e3} \u{02e3}\u{221a}y
+   g  blue   \u{03a3}+ \u{03a3}\u{2212} mean sd CL\u{03a3} int frc drop \u{0394}%
+   h  green  eng grad rnd hms hr \u{2192}P \u{2192}R
+   :  type any XRPN command by name
+
+ {pr}
+   L  load an .xrpn program (blank = the built-in TVM solver)
+   its global LBL \"NAME\" labels become the top row F1..F10
+   F1..F10 run them        SPACE resumes a stopped program
+   flag 22 is set when you key a number, so a program can
+   tell store (number keyed) from solve (bare key press)
+
+ {ed}
+   in scribe, normal-mode = launches rpnx and inserts X
+
+ \u{2191}\u{2193} / PgUp / PgDn scroll  \u{00b7}  ESC or q to close",
+            title = style::bold(&style::fg(" RPNx \u{2014} help", C_TITLE)),
+            se = a("STACK"), en = a("ENTRY"), ar = a("ARITH"), ma = a("MATH"),
+            tr = a("TRIG"), lo = a("LOG"), mo = a("MODE"), re = a("REG"),
+            sh = a("SHIFT"), pr = a("PROGRAMS"), ed = a("EDITOR"),
+        );
+        let (cols, rows) = Crust::terminal_size();
+        let w = 64u16.min(cols.saturating_sub(4));
+        let lines = h.lines().count() as u16 + 2;
+        let ht = lines.min(rows.saturating_sub(2));
+        let mut pop = Popup::centered(w, ht, C_VAL as u16, C_BAR_BG as u16);
+        pop.modal(&h);
+        Crust::clear_screen();
+        self.top.invalidate();
+        self.foot.invalidate();
+        self.render_all();
+    }
+
     /// Prompt for a value in the foot line (returns trimmed input; "" on cancel).
     fn ask(&mut self, prompt: &str) -> String {
         let s = self.foot.ask(prompt, "");
@@ -325,7 +383,7 @@ impl App {
         } else {
             (String::new(), String::new())
         };
-        let hint = "TAB shift \u{00b7} H help \u{00b7} Q quit ";
+        let hint = "TAB shift \u{00b7} ? help \u{00b7} Q quit ";
         let pad = (self.cols as usize).saturating_sub(
             crust::display_width(&base) + crust::display_width(&tag_plain) + crust::display_width(hint),
         );
@@ -703,10 +761,7 @@ impl App {
                         self.run_from("run", pc, rstack);
                     }
                 }
-                "H" => {
-                    self.msg =
-                        "Keys below the stack \u{00b7} L load a program \u{00b7} F1..F10 run its labels".to_string();
-                }
+                "?" | "H" => self.show_help(),
                 _ => {}
             }
             self.render_all();

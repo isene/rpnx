@@ -1,63 +1,220 @@
-# TVM — Time Value of Money (HP-style solver)
+# TVM — Time Value of Money solver (HP-67 / HP-41 style)
 #
-# Global labels appear as the top shift row (F1..F5). Key a value, then press
-# its label to store it; press FV to compute:
+# Five top-row labels: N  I  PV  PMT  FV.  Each key STORES if you just keyed a
+# number, else SOLVES for that variable from the other four — exactly like a
+# financial HP. (RPNx sets flag 22 when a number was keyed; the labels test it.)
 #
-#   value  F1  -> N     number of periods
-#   value  F2  -> I     interest rate, % per period
-#   value  F3  -> PV    present value
-#   value  F4  -> PMT   payment per period (end of period)
-#          F5  -> FV    future value  (shown, and left in X)
+#   value F1 -> N     store N     |   F1 alone -> solve for N
+#   value F2 -> I     store I%    |   F2 alone -> solve for I  (secant iteration)
+#   value F3 -> PV    store PV    |   F3 alone -> solve for PV
+#   value F4 -> PMT   store PMT   |   F4 alone -> solve for PMT
+#   value F5 -> FV    store FV    |   F5 alone -> solve for FV
 #
-# FV = -( PV·(1+i)^N  +  PMT·((1+i)^N - 1)/i ),  i = I/100
-# Registers: 01=N 02=I 03=PV 04=PMT · 05=i 06=g 07=scratch
+# Convention (end-of-period):  FV = -( PV*(1+i)^N + PMT*((1+i)^N - 1)/i ),  i=I/100
+# Registers: 01 N  02 I  03 PV  04 PMT  05 FV | 06 i  07 g  08 k  09 i-eval
+#            21..25 secant scratch  26 loop counter
 #
-# Example: 10 F1  5 F2  -1000 F3  0 F4  F5  ->  FV = 1628,8946
+# Example:  10 F1   5 F2   1000 h F3   100 h F4   F5  ->  FV = 2 886,6839
+#           (then F2 alone re-solves I = 5,0000)
 
+# ---- top-row dispatchers: store (number keyed) or solve (flag 22 clear) ----
 LBL "N"
+FC? 22
+GTO 11
 STO 01
 RTN
 
 LBL "I"
+FC? 22
+GTO 12
 STO 02
 RTN
 
 LBL "PV"
+FC? 22
+GTO 13
 STO 03
 RTN
 
 LBL "PMT"
+FC? 22
+GTO 14
 STO 04
 RTN
 
 LBL "FV"
-# i = I / 100
+FC? 22
+GTO 15
+STO 05
+RTN
+
+# ---- LBL 10: compute i (reg06) and g=(1+i)^N (reg07) from N,I ----
+LBL 10
 RCL 02
 100
 /
-STO 05
-# g = (1 + i) ^ N
+STO 06
 1
 +
 RCL 01
 pow
-STO 06
-# term1 = PV * g
-RCL 03
-RCL 06
-*
 STO 07
-# term2 = PMT * (g - 1) / i
-RCL 06
+RTN
+
+# ---- LBL 15: solve FV ----
+LBL 15
+XEQ 10
+RCL 07
 1
 -
-RCL 05
+RCL 06
 /
 RCL 04
 *
-# FV = -(term1 + term2)
+RCL 03
 RCL 07
+*
 +
 chs
-view
+STO 05
+RTN
+
+# ---- LBL 13: solve PV = -(FV + PMT*(g-1)/i)/g ----
+LBL 13
+XEQ 10
+RCL 07
+1
+-
+RCL 06
+/
+RCL 04
+*
+RCL 05
++
+chs
+RCL 07
+/
+STO 03
+RTN
+
+# ---- LBL 14: solve PMT = -(FV + PV*g)*i/(g-1) ----
+LBL 14
+XEQ 10
+RCL 03
+RCL 07
+*
+RCL 05
++
+chs
+RCL 06
+*
+RCL 07
+1
+-
+/
+STO 04
+RTN
+
+# ---- LBL 11: solve N = ln((k-FV)/(PV+k)) / ln(1+i),  k=PMT/i ----
+LBL 11
+RCL 02
+100
+/
+STO 06
+RCL 04
+RCL 06
+/
+STO 08
+RCL 08
+RCL 05
+-
+RCL 03
+RCL 08
++
+/
+ln
+1
+RCL 06
++
+ln
+/
+STO 01
+RTN
+
+# ---- LBL 20: f(i) = PV*g + PMT*(g-1)/i + FV,  g=(1+i)^N, i in reg09 ----
+LBL 20
+1
+RCL 09
++
+RCL 01
+pow
+STO 07
+RCL 07
+1
+-
+RCL 09
+/
+RCL 04
+*
+RCL 03
+RCL 07
+*
++
+RCL 05
++
+RTN
+
+# ---- LBL 12: solve I by the secant method (converges, then stops) ----
+LBL 12
+0.001
+STO 21
+RCL 21
+STO 09
+XEQ 20
+STO 23
+0.1
+STO 22
+40
+STO 26
+LBL 30
+RCL 22
+STO 09
+XEQ 20
+STO 24
+# converged? |i_cur - i_prev| < 1e-9  ->  finish (before df -> 0)
+RCL 22
+RCL 21
+-
+abs
+0.000000001
+-
+xlt0
+GTO 40
+# secant step: i_next = i_cur - f_cur*(i_cur-i_prev)/(f_cur-f_prev)
+RCL 22
+RCL 21
+-
+RCL 24
+*
+RCL 24
+RCL 23
+-
+/
+RCL 22
+-
+chs
+STO 25
+RCL 22
+STO 21
+RCL 24
+STO 23
+RCL 25
+STO 22
+DSE 26
+GTO 30
+LBL 40
+RCL 22
+100
+*
+STO 02
 RTN

@@ -87,20 +87,25 @@ language with labels, `GTO`/`XEQ`/`RTN`, conditionals, `ISG`/`DSE`, and
 (`LBL "NAME"`) become the **top row**, bound to `F1`..`F10` — the way an
 HP-67's magnetic card overlaid its top keys.
 
-A **TVM** (time-value-of-money) example is built in: press `L`, then Enter, to
-load it. Its labels are N / I / PV / PMT / FV:
+A built-in **TVM** (time-value-of-money) solver is the example: press `L`, then
+Enter, to load it. Its labels are N / I / PV / PMT / FV, and each behaves like a
+financial HP — **key a number then press a label to store it, or press a label
+alone to solve** for that variable from the other four:
 
 ```
- 10   F1     N   = 10 periods
-  5   F2     I   = 5% per period
--1000 F3     PV  = -1000
-  0   F4     PMT = 0
-      F5     FV  ->  1628,8946
+ 10    F1      store N   = 10 periods
+  5    F2      store I   = 5% per period
+-1000  F3      store PV       (1000 h F3)
+-100   F4      store PMT      (100  h F4)
+       F5      solve  FV  ->  2 886,6839
+       F2      solve  I   ->  5,0000     (re-solves the rate by iteration)
 ```
 
-Key a value, press its label to store it; press `FV` to compute. A program that
-hits `STOP` (R/S) or `PROMPT` resumes with `SPACE`. The example is at
-[`examples/tvm.xrpn`](examples/tvm.xrpn) — a good template for your own cards.
+This works because RPNx sets HP **flag 22** when you key a number; the program
+tests it (`FC? 22`) to choose store vs solve. N / PV / PMT / FV are closed-form;
+I is found by the secant method. A program that hits `STOP` or `PROMPT` resumes
+with `SPACE`. The source is [`examples/tvm.xrpn`](examples/tvm.xrpn) — a template
+for your own cards.
 
 ## In your editor: scribe `=`
 

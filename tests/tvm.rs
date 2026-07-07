@@ -1,5 +1,6 @@
-// Verifies the bundled TVM example program computes a correct future value,
-// driven exactly the way the TUI drives it: set X, run a global label.
+// The bundled TVM program is a real HP-style solver: each variable key stores
+// (when a number was just keyed -> flag 22 set) or solves for that variable
+// (flag 22 clear) from the other four. This drives it exactly as the TUI does.
 
 use rpnx_core::{new_state, parse_program, run_program, CalcState, Program};
 
@@ -17,26 +18,39 @@ fn label_line(p: &Program, name: &str) -> u32 {
     panic!("label {name} not found");
 }
 
-fn run_label(mut s: CalcState, p: &Program, name: &str, x: f64) -> CalcState {
-    s.x = x;
+/// Key a value then press the variable key (flag 22 set -> store).
+fn store(mut s: CalcState, p: &Program, name: &str, v: f64) -> CalcState {
+    s.x = v;
     s.entering = String::new();
+    s.flags.insert("22".into(), true);
     run_program(s, p.clone(), label_line(p, name), vec![], false, 0).calc
 }
 
+/// Press the variable key with nothing keyed (flag 22 clear -> solve).
+fn solve_x(mut s: CalcState, p: &Program, name: &str) -> f64 {
+    s.flags.insert("22".into(), false);
+    run_program(s, p.clone(), label_line(p, name), vec![], false, 0).calc.x
+}
+
 #[test]
-fn tvm_future_value() {
-    let text = include_str!("../examples/tvm.xrpn");
-    let p = parse_program("tvm".into(), text.into());
+fn tvm_solver_all_directions() {
+    let p = parse_program("tvm".into(), include_str!("../examples/tvm.xrpn").into());
+    let (n, i, pv, pmt) = (10.0, 5.0, -1000.0, -100.0);
 
+    // Store the four knowns, solve FV.
     let mut s = new_state();
-    s = run_label(s, &p, "N", 10.0);
-    s = run_label(s, &p, "I", 5.0);
-    s = run_label(s, &p, "PV", -1000.0);
-    s = run_label(s, &p, "PMT", 0.0);
-    // FV takes no fresh input; keep X as-is.
-    let pc = label_line(&p, "FV");
-    let fv = run_program(s, p.clone(), pc, vec![], false, 0).calc.x;
+    s = store(s, &p, "N", n);
+    s = store(s, &p, "I", i);
+    s = store(s, &p, "PV", pv);
+    s = store(s, &p, "PMT", pmt);
+    let fv = solve_x(s.clone(), &p, "FV");
+    assert!((fv - 2886.683881).abs() < 1e-3, "FV = {fv}");
 
-    // -PV·1.05^10 = 1000 · 1.6288946267… = 1628.8946…
-    assert!((fv - 1628.8946267).abs() < 1e-4, "FV was {fv}");
+    // With N/I/PV/PMT/FV all set, each other variable must solve back.
+    let base = store(s, &p, "FV", fv);
+    assert!((solve_x(base.clone(), &p, "PV") - pv).abs() < 1e-3);
+    assert!((solve_x(base.clone(), &p, "PMT") - pmt).abs() < 1e-3);
+    assert!((solve_x(base.clone(), &p, "N") - n).abs() < 1e-3);
+    let solved_i = solve_x(base.clone(), &p, "I"); // secant iteration
+    assert!((solved_i - i).abs() < 1e-3, "I = {solved_i}");
 }
