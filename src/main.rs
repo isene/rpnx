@@ -443,7 +443,7 @@ impl App {
             .map(|v| crust::display_width(v))
             .max()
             .unwrap_or(0)
-            .max(12);
+            .max(15);
         // Indent so the register labels (L/T/…/X) sit under the first legend
         // column (the "0-9" cell, which starts 10 cols in: "  " + 5-wide group
         // label + "   "). Box border at col 8, label at col 10.
