@@ -15,9 +15,12 @@
 use crust::{Crust, Input, Pane, style};
 use rpnx_core::{
     display, execute, key_backspace, key_chs, key_digit, key_dot, key_eex, key_enter, new_state,
-    parse_state, serialize_state, CalcState,
+    parse_program, parse_state, run_program, serialize_state, CalcState, Program, RunStatus,
 };
 use std::path::PathBuf;
+
+/// Bundled example program: the top-row global labels are N/I/PV/PMT/FV.
+const TVM_EXAMPLE: &str = include_str!("../examples/tvm.xrpn");
 
 // Palette (xterm-256), aligned with the rest of the suite.
 const C_TITLE: u8 = 214; // RPNx accent (orange)
@@ -31,6 +34,27 @@ const C_MSG: u8 = 214; // transient message
 const C_BAR_BG: u8 = 236; // title / foot background
 const C_BOX: u8 = 240; // stack box border
 const C_GRP: u8 = 109; // legend group label
+const C_PROG: u8 = 176; // program label row (magenta, the "magnetic card")
+
+/// The program's global (alpha) labels — `lbl "NAME"` — in file order, with
+/// their line index. These become the top shift row (F1..F10), HP-67 style.
+fn global_labels(prog: &Program) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
+    for (i, line) in prog.lines.iter().enumerate() {
+        let t = line.trim();
+        let mut it = t.splitn(2, char::is_whitespace);
+        if it.next().unwrap_or("").eq_ignore_ascii_case("lbl") {
+            let arg = it.next().unwrap_or("").trim();
+            if arg.starts_with('"') {
+                let name = arg.trim_matches('"').to_string();
+                if !name.is_empty() {
+                    out.push((name, i));
+                }
+            }
+        }
+    }
+    out
+}
 
 /// A cycling SHIFT page. The SHIFT key (TAB) steps base -> f -> g -> h -> base.
 /// While a page is active its functions overlay the listed keys (recoloured to
@@ -111,6 +135,10 @@ struct App {
     undo: Vec<CalcState>,
     msg: String,
     page: usize, // 0 = base; 1..=3 index SHIFT_PAGES
+    program: Option<Program>,
+    labels: Vec<(String, usize)>, // global labels -> F1..F10 (name, line)
+    prog_name: String,
+    resume: Option<(u32, Vec<u32>)>, // paused (pc, return stack) for R/S
 }
 
 impl App {
@@ -135,6 +163,99 @@ impl App {
             undo: Vec::new(),
             msg: String::new(),
             page: 0,
+            program: None,
+            labels: Vec::new(),
+            prog_name: String::new(),
+            resume: None,
+        }
+    }
+
+    /// Parse program text and set it up (labels -> top row).
+    fn load_program_text(&mut self, name: &str, text: &str) {
+        let prog = parse_program(name.to_string(), text.to_string());
+        self.labels = global_labels(&prog);
+        let (lines, labs) = (prog.lines.len(), self.labels.len());
+        self.prog_name = name.to_string();
+        self.program = Some(prog);
+        self.resume = None;
+        self.msg = if labs == 0 {
+            format!("loaded {} ({} lines) \u{2014} no global labels", name, lines)
+        } else {
+            format!(
+                "loaded {} ({} lines, {} labels) \u{2014} F1..F{} run them",
+                name, lines, labs, labs.min(10)
+            )
+        };
+    }
+
+    /// Read a `.xrpn` file from disk (with ~ expansion) and load it.
+    fn load_program_path(&mut self, path: &str) {
+        let p = path.trim();
+        let expanded = match p.strip_prefix("~/") {
+            Some(rest) => format!("{}/{}", std::env::var("HOME").unwrap_or_default(), rest),
+            None => p.to_string(),
+        };
+        match std::fs::read_to_string(&expanded) {
+            Ok(text) => {
+                let name = std::path::Path::new(&expanded)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "program".into());
+                self.load_program_text(&name, &text);
+            }
+            Err(e) => self.msg = format!("load failed: {}", e),
+        }
+    }
+
+    /// Run the program from `pc`, absorbing the result into calc + status.
+    fn run_from(&mut self, label: &str, pc: u32, rstack: Vec<u32>) {
+        let Some(prog) = self.program.clone() else { return };
+        self.push_undo();
+        let r = run_program(self.state.clone(), prog, pc, rstack, false, 0);
+        self.state = r.calc;
+        let out = r.output.last().cloned();
+        match r.status {
+            RunStatus::Ended => {
+                self.resume = None;
+                self.msg = match out {
+                    Some(o) => format!("{} \u{2192} {}", label, o),
+                    None => format!("{} done", label),
+                };
+            }
+            RunStatus::Stopped => {
+                self.resume = Some((r.pc, r.return_stack));
+                self.msg = format!(
+                    "{}: stopped \u{2014} SPACE to resume",
+                    out.unwrap_or_else(|| label.to_string())
+                );
+            }
+            RunStatus::Prompt => {
+                self.resume = Some((r.pc, r.return_stack));
+                self.msg = format!(
+                    "{} \u{2014} key a value, then SPACE",
+                    out.unwrap_or_default()
+                );
+            }
+            RunStatus::Error => {
+                self.resume = None;
+                self.msg = format!("error: {}", r.message.unwrap_or_default());
+            }
+            RunStatus::StepCap => {
+                self.resume = None;
+                self.msg = "step limit \u{2014} possible infinite loop".into();
+            }
+        }
+    }
+
+    /// F-key pressed: run the corresponding global label (1-based).
+    fn run_label(&mut self, fkey: usize) {
+        if self.program.is_none() {
+            self.msg = "no program \u{2014} press L to load one".into();
+            return;
+        }
+        match self.labels.get(fkey.wrapping_sub(1)).cloned() {
+            Some((name, line)) => self.run_from(&name, line as u32, vec![]),
+            None => self.msg = format!("F{}: no label there", fkey),
         }
     }
 
@@ -215,6 +336,29 @@ impl App {
         let inner_w = field + 3; // label + 2 spaces + value field
         let bar = style::fg("\u{2502}", C_BOX);
         let mut f = String::new();
+        // Loaded program's global labels as a top row — HP-67 "magnetic card".
+        if self.program.is_some() && !self.labels.is_empty() {
+            let cells: String = self
+                .labels
+                .iter()
+                .take(10)
+                .enumerate()
+                .map(|(i, (name, _))| {
+                    format!(
+                        "{} {}",
+                        style::fg(&format!("F{}", i + 1), C_PROG),
+                        style::bold(&style::fg(name, C_PROG))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("   ");
+            f.push_str(&format!(
+                "  {} {}   {}\n\n",
+                style::bold(&style::fg("PROG", C_PROG)),
+                style::fg(&self.prog_name, C_DESC),
+                cells
+            ));
+        }
         // Boxed stack — a little calculator "card".
         f.push_str(&format!(
             "{}{}\n",
@@ -359,7 +503,7 @@ impl App {
             "mode",
             &[("f", "fix"), ("s", "sci"), ("'", "fmt"), ("u", "undo")],
         ));
-        out.push_str(&grp("reg", &[("S", "sto"), ("R", "rcl")]));
+        out.push_str(&grp("reg", &[("S", "sto"), ("R", "rcl"), ("L", "load prog")]));
         out.push('\n');
         // The rest of the phone's shift-page functions, reached by typing the
         // command name after `:`.
@@ -407,6 +551,12 @@ impl App {
             // other key falls through to the base handling below.
             if let Some(cmd) = self.page_cmd(&key) {
                 self.run_cmd(cmd);
+                self.render_all();
+                continue;
+            }
+            // Function keys run the loaded program's global labels (top row).
+            if let Some(n) = key.strip_prefix('F').and_then(|s| s.parse::<usize>().ok()) {
+                self.run_label(n);
                 self.render_all();
                 continue;
             }
@@ -529,9 +679,23 @@ impl App {
                         self.msg = "Nothing to undo".to_string();
                     }
                 }
+                // ----- programs
+                "L" => {
+                    let p = self.ask("load .xrpn (blank = built-in TVM): ");
+                    if p.is_empty() {
+                        self.load_program_text("tvm", TVM_EXAMPLE);
+                    } else {
+                        self.load_program_path(&p);
+                    }
+                }
+                " " => {
+                    if let Some((pc, rstack)) = self.resume.take() {
+                        self.run_from("run", pc, rstack);
+                    }
+                }
                 "H" => {
                     self.msg =
-                        "Keys shown below the stack. STO/RCL/FIX/SCI prompt for a number.".to_string();
+                        "Keys below the stack \u{00b7} L load a program \u{00b7} F1..F10 run its labels".to_string();
                 }
                 _ => {}
             }
@@ -550,12 +714,29 @@ fn main() {
         println!("  r rad  d deg   f fix  s sci   S sto  R rcl   ' number-format   ! fact   | abs");
         println!("  : type any XRPN command (sqr cube exp tenx root  \u{03a3}+ mean sdev  hms \u{2192}P eng grad \u{2026})");
         println!("  TAB cycle shift pages f/g/h (coloured): powers / stats / modes+convert; ESC = base");
+        println!("  L load an XRPN program (blank = built-in TVM); its global labels -> F1..F10");
+        println!("  F1..F10 run those labels (HP-67 top-row style)   SPACE resume a stopped program");
         println!("  u undo   c CLx   C CLstk   H help   Q quit");
         println!();
+        println!("  rpnx [program.xrpn]   load a program at startup");
         println!("  --emit-x   print the X register to stdout on quit (for scribe paste-back)");
         return;
     }
     let emit_x = args.iter().any(|a| a == "--emit-x");
+    // A positional (non-flag, non-flag-value) argument is a program file.
+    let mut prog_path: Option<String> = None;
+    let mut skip_next = false;
+    for a in &args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if a == "--emit-file" {
+            skip_next = true;
+        } else if !a.starts_with('-') {
+            prog_path = Some(a.clone());
+        }
+    }
     // --emit-file <path>: write X to a file on a normal quit. Used by scribe,
     // whose caller can't capture our stdout (the TUI draws there).
     let emit_file = args
@@ -567,6 +748,9 @@ fn main() {
     Crust::init();
     Crust::set_app_identity("rpnx");
     let mut app = App::new();
+    if let Some(path) = &prog_path {
+        app.load_program_path(path);
+    }
     let result = app.run();
     save_state(&app.state);
     Crust::cleanup();

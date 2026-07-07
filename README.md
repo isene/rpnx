@@ -79,6 +79,29 @@ also how you will run and edit XRPN programs.
 The stack, registers, flags and display mode persist across sessions in
 `~/.config/rpnx/state`.
 
+## Programs — the magnetic-card top row
+
+RPNx runs [XRPN](https://github.com/isene/xrpn) programs: the HP-41 / FOCAL
+language with labels, `GTO`/`XEQ`/`RTN`, conditionals, `ISG`/`DSE`, and
+`PROMPT`. Load one with `L` (or `rpnx program.xrpn`). Its **global labels**
+(`LBL "NAME"`) become the **top row**, bound to `F1`..`F10` — the way an
+HP-67's magnetic card overlaid its top keys.
+
+A **TVM** (time-value-of-money) example is built in: press `L`, then Enter, to
+load it. Its labels are N / I / PV / PMT / FV:
+
+```
+ 10   F1     N   = 10 periods
+  5   F2     I   = 5% per period
+-1000 F3     PV  = -1000
+  0   F4     PMT = 0
+      F5     FV  ->  1628,8946
+```
+
+Key a value, press its label to store it; press `FV` to compute. A program that
+hits `STOP` (R/S) or `PROMPT` resumes with `SPACE`. The example is at
+[`examples/tvm.xrpn`](examples/tvm.xrpn) — a good template for your own cards.
+
 ## In your editor: scribe `=`
 
 [scribe](https://github.com/isene/scribe) (the Fe₂O₃ editor) launches RPNx on

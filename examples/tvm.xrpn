@@ -1,0 +1,63 @@
+# TVM — Time Value of Money (HP-style solver)
+#
+# Global labels appear as the top shift row (F1..F5). Key a value, then press
+# its label to store it; press FV to compute:
+#
+#   value  F1  -> N     number of periods
+#   value  F2  -> I     interest rate, % per period
+#   value  F3  -> PV    present value
+#   value  F4  -> PMT   payment per period (end of period)
+#          F5  -> FV    future value  (shown, and left in X)
+#
+# FV = -( PV·(1+i)^N  +  PMT·((1+i)^N - 1)/i ),  i = I/100
+# Registers: 01=N 02=I 03=PV 04=PMT · 05=i 06=g 07=scratch
+#
+# Example: 10 F1  5 F2  -1000 F3  0 F4  F5  ->  FV = 1628,8946
+
+LBL "N"
+STO 01
+RTN
+
+LBL "I"
+STO 02
+RTN
+
+LBL "PV"
+STO 03
+RTN
+
+LBL "PMT"
+STO 04
+RTN
+
+LBL "FV"
+# i = I / 100
+RCL 02
+100
+/
+STO 05
+# g = (1 + i) ^ N
+1
++
+RCL 01
+pow
+STO 06
+# term1 = PV * g
+RCL 03
+RCL 06
+*
+STO 07
+# term2 = PMT * (g - 1) / i
+RCL 06
+1
+-
+RCL 05
+/
+RCL 04
+*
+# FV = -(term1 + term2)
+RCL 07
++
+chs
+view
+RTN
