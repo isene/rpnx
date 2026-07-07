@@ -556,6 +556,13 @@ fn main() {
         return;
     }
     let emit_x = args.iter().any(|a| a == "--emit-x");
+    // --emit-file <path>: write X to a file on a normal quit. Used by scribe,
+    // whose caller can't capture our stdout (the TUI draws there).
+    let emit_file = args
+        .iter()
+        .position(|a| a == "--emit-file")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
 
     Crust::init();
     Crust::set_app_identity("rpnx");
@@ -563,9 +570,14 @@ fn main() {
     let result = app.run();
     save_state(&app.state);
     Crust::cleanup();
-    if emit_x {
-        if let Some(x) = result {
-            println!("{}", x.trim());
+    // `result` is Some(X) on a normal quit, None on a cancel-quit (Ctrl+C).
+    if let Some(x) = result {
+        let x = x.trim();
+        if emit_x {
+            println!("{}", x);
+        }
+        if let Some(path) = &emit_file {
+            let _ = std::fs::write(path, x);
         }
     }
 }
