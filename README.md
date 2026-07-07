@@ -1,6 +1,6 @@
 # RPNx
 
-<img src="img/rpnx_logo.svg" align="left" width="150" height="150">
+<img src="img/rpnx.svg" align="left" width="150" height="150">
 
 ![release](https://badgen.net/github/release/isene/rpnx) ![Rust](https://img.shields.io/badge/language-Rust-f74c00) ![License](https://img.shields.io/badge/license-Unlicense-green) ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-blue) ![Stay Amazing](https://img.shields.io/badge/Stay-Amazing-important)
 
