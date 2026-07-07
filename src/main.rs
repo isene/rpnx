@@ -379,7 +379,7 @@ impl App {
     fn render_foot(&mut self) {
         if self.msg.is_empty() {
             self.foot.say(&style::fg(
-                " number then ENTER to push \u{00b7} ops act on Y and X \u{00b7} ':' any command \u{00b7} 'u' undo \u{00b7} 'Q' quit",
+                " number then ENTER to push \u{00b7} ops act on Y and X \u{00b7} TAB shift pages (f/g/h) \u{00b7} ':' any command \u{00b7} 'u' undo \u{00b7} 'Q' quit",
                 C_DESC,
             ));
         } else {

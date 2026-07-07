@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark rounded card, matching the RPNx TUI -->
+  <rect x="0" y="0" width="200" height="200" rx="18" fill="#0E141A"/>
+  <rect x="0.5" y="0.5" width="199" height="199" rx="17.5" fill="none" stroke="#1e2830" stroke-width="1"/>
+
+  <!-- HP-41 style stack display -->
+  <rect x="24" y="24" width="152" height="58" rx="6" fill="#0b1f14" stroke="#233b2c" stroke-width="2"/>
+  <g font-family="monospace" fill="#40ff7a">
+    <text x="34" y="44" font-size="11" opacity="0.55">Y      2.0000</text>
+    <text x="34" y="64" font-size="15" font-weight="bold">X     48.6313</text>
+    <text x="166" y="44" font-size="8" text-anchor="end" opacity="0.7">FIX 4  DEG</text>
+  </g>
+
+  <!-- Cycling shift-page colour chips — the RPNx signature -->
+  <g>
+    <rect x="24"  y="95" width="34" height="21" rx="4" fill="#E5B567"/>
+    <rect x="63"  y="95" width="34" height="21" rx="4" fill="#FFC04D"/>
+    <rect x="102" y="95" width="34" height="21" rx="4" fill="#7CC4FF"/>
+    <rect x="141" y="95" width="34" height="21" rx="4" fill="#7CFFB0"/>
+    <g font-family="monospace" font-size="12" fill="#0E141A" text-anchor="middle" font-weight="bold">
+      <text x="41"  y="110">&#183;</text>
+      <text x="80"  y="110">f</text>
+      <text x="119" y="110">g</text>
+      <text x="158" y="110">h</text>
+    </g>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="100" y="151" font-family="monospace" font-size="34" fill="#FFAF00" text-anchor="middle" font-weight="bold">RPNx</text>
+  <text x="100" y="173" font-family="monospace" font-size="10" fill="#8aa0b0" text-anchor="middle" letter-spacing="2">RPN &#183; XRPN CALC</text>
+
+  <!-- Fe2O3 rust accent -->
+  <circle cx="180" cy="20" r="6" fill="#C1440E" opacity="0.9"/>
+</svg>
