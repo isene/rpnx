@@ -380,7 +380,7 @@ impl App {
         let lines = h.lines().count() as u16 + 2;
         let ht = lines.min(rows.saturating_sub(2));
         let mut pop = Popup::centered(w, ht, C_VAL as u16, C_BAR_BG as u16);
-        pop.modal(&h);
+        pop.view(&h);
         Crust::clear_screen();
         self.top.invalidate();
         self.foot.invalidate();
