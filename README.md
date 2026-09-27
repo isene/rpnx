@@ -57,6 +57,7 @@ Number entry: digits, `.`, `e` (exponent), `h` (±), `ENTER` to push, `⌫` back
 | **log** | `n` ln · `g` log |
 | **modes** | `f` fix · `s` sci · `'` number format (comma/dot) · `u` undo |
 | **regs** | `S` store · `R` recall |
+| **Claude** | `Ctrl+A` a Claude session about the stack, the registers and the loaded program (`claude` on the PATH); `/exit` comes back |
 
 ### Cycling shift pages
 

@@ -164,6 +164,8 @@ struct App {
     program: Option<Program>,
     labels: Vec<(String, usize)>, // global labels -> F1..F10 (name, line)
     prog_name: String,
+    /// The loaded program's source, for Claude.
+    prog_text: String,
     resume: Option<(u32, Vec<u32>)>, // paused (pc, return stack) for R/S
 }
 
@@ -192,6 +194,7 @@ impl App {
             program: None,
             labels: Vec::new(),
             prog_name: String::new(),
+            prog_text: String::new(),
             resume: None,
         }
     }
@@ -199,6 +202,7 @@ impl App {
     /// Parse program text and set it up (labels -> top row).
     fn load_program_text(&mut self, name: &str, text: &str) {
         let prog = parse_program(name.to_string(), text.to_string());
+        self.prog_text = text.to_string();
         self.labels = global_labels(&prog);
         let (lines, labs) = (prog.lines.len(), self.labels.len());
         self.prog_name = name.to_string();
@@ -363,6 +367,7 @@ impl App {
    L  load an .xrpn program (blank = the built-in TVM solver)
    its global LBL \"NAME\" labels become the top row F1..F10
    F1..F10 run them        SPACE resumes a stopped program
+   Ctrl+A  ask Claude about the stack and the program
    flag 22 is set when you key a number, so a program can
    tell store (number keyed) from solve (bare key press)
 
@@ -385,6 +390,27 @@ impl App {
         self.top.invalidate();
         self.foot.invalidate();
         self.render_all();
+    }
+
+    /// Ctrl+A, as in every Fe2O3 app: a Claude session about the stack,
+    /// the registers and the loaded program.
+    fn claude(&mut self) {
+        let mut ctx = format!(
+            "{}\n{}\n",
+            crust::strip_ansi(self.top.text()),
+            crust::strip_ansi(self.main.text()),
+        );
+        if self.program.is_some() {
+            ctx.push_str(&format!("\nThe loaded XRPN program, {}:\n{}\n", self.prog_name, self.prog_text));
+        }
+        let intro = "I am in rpnx, my RPN calculator in the style of the HP-41, which runs XRPN programs.";
+        if !crust::claude_session("RPNx", intro, &ctx) {
+            self.msg = "claude is not on the PATH".to_string();
+        }
+        Crust::clear_screen();
+        self.top.full_refresh();
+        self.main.full_refresh();
+        self.foot.full_refresh();
     }
 
     /// Prompt for a value in the foot line (returns trimmed input; "" on cancel).
@@ -800,6 +826,7 @@ impl App {
                     }
                 }
                 "?" | "H" => self.show_help(),
+                "C-A" => self.claude(),
                 _ => {}
             }
             self.render_all();
@@ -819,7 +846,7 @@ fn main() {
         println!("  TAB cycle shift pages f/g/h (coloured): powers / stats / modes+convert; ESC = base");
         println!("  L load an XRPN program (blank = built-in TVM); its global labels -> F1..F10");
         println!("  F1..F10 run those labels (HP-67 top-row style)   SPACE resume a stopped program");
-        println!("  u undo   c CLx   C CLstk   H help   Q quit");
+        println!("  u undo   c CLx   C CLstk   Ctrl+A ask Claude   H help   Q quit");
         println!();
         println!("  rpnx [program.xrpn]   load a program at startup");
         println!("  --emit-x   print the X register to stdout on quit (for scribe paste-back)");
