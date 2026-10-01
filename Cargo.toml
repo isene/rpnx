@@ -1,6 +1,6 @@
 [package]
 name = "rpnx"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Geir Isene <g@isene.com>"]
 description = "RPNx — terminal RPN / XRPN scientific calculator: HP-41CX-style stack, full math/trig/log/stats/base command set, runs XRPN programs. Part of the Fe2O3 suite."

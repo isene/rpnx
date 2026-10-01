@@ -105,8 +105,33 @@ alone to solve** for that variable from the other four:
 This works because RPNx sets HP **flag 22** when you key a number; the program
 tests it (`FC? 22`) to choose store vs solve. N / PV / PMT / FV are closed-form;
 I is found by the secant method. A program that hits `STOP` or `PROMPT` resumes
-with `SPACE`. The source is [`examples/tvm.xrpn`](examples/tvm.xrpn) — a template
+with `SPACE`. The source is [`examples/tvm.xrpn`](examples/tvm.xrpn), a template
 for your own cards.
+
+### HP-41 listings load as they are
+
+A listing keyed on a real HP-41 runs without editing. `L` takes the file
+with its step numbers, its `*LBL` marks and the HP-41's own spellings:
+
+```
+001*LBL "SUBN"
+002 32
+003 X<>Y
+004 -
+005 2
+006 X<>Y
+007 Y^X
+008 END
+```
+
+`X<>Y`, `1/X`, `Y^X`, `E^X`, `ENTER^`, `R^`, `X=0?`, `X#Y?`, `FS?C`, `ST+ Y`,
+`X<> 01`, `"|-TEXT"`, `E2` and `1 E3` all work. The top-row labels `LBL A` to
+`J` and `a` to `e` go on the F-keys beside the global ones. Still missing
+are indirect addressing (`IND`), the Time module, extended memory and
+anything that needs a ROM.
+
+A library of such programs runs in the browser at
+[isene.org/fe2o3/try](https://isene.org/fe2o3/try/app.html?a=rpnx).
 
 ## In your editor: scribe `=`
 

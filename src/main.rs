@@ -62,8 +62,10 @@ fn group_entry(disp: &str, dec: char, thou: char) -> String {
     format!("{}{}{}", sign, grouped, &rest[int_end..])
 }
 
-/// The program's global (alpha) labels — `lbl "NAME"` — in file order, with
-/// their line index. These become the top shift row (F1..F10), HP-67 style.
+/// The program's key labels in file order, with their line index: the global
+/// (alpha) labels — `lbl "NAME"` — and the HP-41's top-row local labels,
+/// `lbl A` to `J` and `a` to `e`. These become the top shift row (F1..F10),
+/// HP-67 style.
 fn global_labels(prog: &Program) -> Vec<(String, usize)> {
     let mut out = Vec::new();
     for (i, line) in prog.lines.iter().enumerate() {
@@ -76,6 +78,8 @@ fn global_labels(prog: &Program) -> Vec<(String, usize)> {
                 if !name.is_empty() {
                     out.push((name, i));
                 }
+            } else if matches!(arg.as_bytes(), [b'A'..=b'J'] | [b'a'..=b'e']) {
+                out.push((arg.to_string(), i));
             }
         }
     }
@@ -364,8 +368,9 @@ impl App {
    :  type any XRPN command by name
 
  {pr}
-   L  load an .xrpn program (blank = the built-in TVM solver)
-   its global LBL \"NAME\" labels become the top row F1..F10
+   L  load an .xrpn program or an HP-41 listing, step numbers
+      and all (blank = the built-in TVM solver)
+   its LBL \"NAME\" and LBL A..J labels become the top row F1..F10
    F1..F10 run them        SPACE resumes a stopped program
    Ctrl+A  ask Claude about the stack and the program
    flag 22 is set when you key a number, so a program can
@@ -814,7 +819,7 @@ impl App {
                 }
                 // ----- programs
                 "L" => {
-                    let p = self.ask("load .xrpn (blank = built-in TVM): ");
+                    let p = self.ask("load .xrpn or HP-41 listing (blank = built-in TVM): ");
                     if p.is_empty() {
                         self.load_program_text("tvm", TVM_EXAMPLE);
                     } else {
