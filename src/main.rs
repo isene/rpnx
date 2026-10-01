@@ -380,6 +380,7 @@ impl App {
             tr = a("TRIG"), lo = a("LOG"), mo = a("MODE"), re = a("REG"),
             sh = a("SHIFT"), pr = a("PROGRAMS"), ed = a("EDITOR"),
         );
+        let h = crust::key_help(h);
         let (cols, rows) = Crust::terminal_size();
         let w = 64u16.min(cols.saturating_sub(4));
         let lines = h.lines().count() as u16 + 2;
